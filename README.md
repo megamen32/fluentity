@@ -1,259 +1,454 @@
-# fluent-control
+# Fluentity
 
-**Small Python helpers for code that should keep moving even when individual steps fail.**
+[![Tests](https://github.com/megamen32/fluentity/actions/workflows/tests.yml/badge.svg)](https://github.com/megamen32/fluentity/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/fluentity.svg)](https://pypi.org/project/fluentity/)
+[![Python](https://img.shields.io/pypi/pyversions/fluentity.svg)](https://pypi.org/project/fluentity/)
+[![License](https://img.shields.io/github/license/megamen32/fluentity.svg)](LICENSE)
 
-`fluent-control` is a compact utility library for scripts, bots, parsers, automation jobs, and small backend services. It gives you a practical set of primitives for safe function calls, Rust-like `Result` values, fluent `try/except` and `if/else` blocks, async pipelines, and a simple SQLite-backed local task queue.
+**Fluent reliability primitives for Python functions.**
 
-The goal is not to replace large workflow frameworks. The goal is to remove repetitive boilerplate from everyday Python code where you need to run many small operations, handle partial failures, and keep the control flow readable.
+Fluentity helps Python code keep moving: safe attempts, retries, timeouts, fallbacks, explicit `Result` values, and async control chains.
 
-## Why it is useful
+It turns fragile code with `try/except` blocks, retry loops, result checks, fallbacks, logging hooks, and async timeouts into readable execution chains.
 
-Real automation code often has the same recurring problems:
+It is **not** another fluent collection wrapper. Libraries such as `flupy` and `pyfluent-iterables` are great when your main problem is transforming iterables with `.map()`, `.filter()`, `.chunk()`, `.to_list()`, and similar operations.
 
-- one bad item breaks the whole batch;
-- `try/except` blocks hide the main logic;
-- sync and async functions need to be chained together;
-- small background jobs need persistence, but Celery/RQ/Airflow are too heavy;
-- scripts need to look clean enough to maintain later.
-
-`fluent-control` focuses exactly on that middle layer: safer calls, clearer flow, and lightweight orchestration.
-
-## Features
-
-- **Safe calls**: run callables with fallback values instead of crashing the whole process.
-- **`Result` API**: use `Ok(value)` / `Err(error)` with `unwrap`, `unwrap_or`, `map`, `bind`, and pattern matching.
-- **Fluent control flow**: express `try/except/else/finally` and `if/elif/else/finally` chains declaratively.
-- **Async pipelines**: chain sync and async steps in one readable `AsyncChain`.
-- **Persistent task queue**: store local tasks in SQLite and execute them later.
-- **Small surface area**: no complex service, broker, worker cluster, or configuration system.
-
-## Quick examples
-
-### Safe fallback for fragile code
+Fluentity solves a different problem: **running unsafe operations safely**.
 
 ```python
-from fluent_control import try_get
+from fluentity import attempt
 
-username = try_get(
-    lambda: payload["user"]["profile"]["username"],
-    default="anonymous",
+orders = (
+    attempt(load_user, user_id)
+    .retry(times=3, delay=1)
+    .timeout(10)
+    .ensure(lambda user: user.is_active, "User is inactive")
+    .then(load_orders)
+    .tap(lambda orders: logger.info(f"Loaded {len(orders)} orders"))
+    .tap_error(lambda error: logger.exception(f"Failed to load orders: {error}"))
+    .recover_value([])
+    .run()
+    .unwrap()
 )
 ```
 
-### Rust-like `Result`
+For async code, you can skip the explicit `.arun()` and await the configured attempt directly:
 
 ```python
-from fluent_control import Ok, Err, capture
-
-result = capture(lambda: 10 / 2)
-
-match result:
-    case Ok(value):
-        print(f"Success: {value}")
-    case Err(error):
-        print(f"Failed: {error}")
-```
-
-### Transform only successful values
-
-```python
-from fluent_control import capture
-
-result = (
-    capture(lambda: "42")
-    .map(int)
-    .map(lambda value: value * 2)
-    .unwrap_or(0)
-)
-
-print(result)  # 84
-```
-
-### Fluent `try/except/else/finally`
-
-```python
-from fluent_control import TryExecutor
-
-value = (
-    TryExecutor(lambda: int("123"))
-    .except_(lambda error: print(f"Bad value: {error}"), ValueError)
-    .else_(lambda result: print(f"Parsed: {result}"))
-    .finally_(lambda: print("Done"))
-    .execute()
+result = await (
+    attempt(fetch_user, user_id)
+    .retry(times=3, delay=1)
+    .timeout(10)
+    .ensure(lambda user: user.is_active, "Inactive user")
+    .then(fetch_orders)
+    .recover_value([])
 )
 ```
 
-### Fluent condition tree
+## Why Fluentity?
 
-```python
-from fluent_control import ConditionalExecutor
+Use Fluentity when an operation can fail, return invalid data, need a retry, require a fallback, or be composed with more steps.
 
-status = "premium"
+Good fit:
 
-message = (
-    ConditionalExecutor()
-    .if_(lambda: status == "admin")
-    .then(lambda: "Full access")
-    .elif_(lambda: status == "premium")
-    .then(lambda: "Premium access")
-    .else_(lambda: "Basic access")
-    .execute()
-)
-```
+- HTTP/API calls;
+- Telegram bots and background handlers;
+- parsers and scraping scripts;
+- local automation scripts;
+- ETL steps;
+- LLM calls;
+- code where you want explicit `Ok(...)` / `Err(...)` instead of uncontrolled exceptions.
 
-### Async pipeline with sync and async steps
+Not the main goal:
 
-```python
-import asyncio
-from fluent_control import AsyncChain
-
-async def fetch_number() -> int:
-    await asyncio.sleep(0.1)
-    return 21
-
-def double(value: int) -> int:
-    return value * 2
-
-async def main() -> None:
-    result = await (
-        AsyncChain()
-        .then(fetch_number)
-        .then(double)
-        .add_delay(0.1)
-        .on_complete(lambda value: f"result={value}")
-        .run()
-    )
-    print(result)
-
-asyncio.run(main())
-```
-
-### Local persistent task queue
-
-```python
-import asyncio
-import time
-from fluent_control import TaskManager
-
-manager = TaskManager.instance("demo")
-
-@manager.task
-def heavy_square(value: int) -> int:
-    time.sleep(1)
-    return value * value
-
-async def main() -> None:
-    heavy_square(3)
-    heavy_square(4)
-    await manager.start_tasks(once=True)
-
-    for task in manager.tasks:
-        print(task.status, task.result)
-
-asyncio.run(main())
-```
+- replacing list comprehensions;
+- replacing `itertools`;
+- becoming a DataFrame library;
+- cloning fluent iterable libraries.
 
 ## Installation
 
-From PyPI, once published:
-
 ```bash
-pip install fluent-control
+pip install fluentity
 ```
 
-From a local checkout:
+For the optional SQLite task manager:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/fluent-control.git
-cd fluent-control
-pip install -e .
+pip install "fluentity[tasks]"
 ```
 
 For development:
 
 ```bash
+git clone https://github.com/megamen32/fluentity.git
+cd fluentity
 pip install -e .[dev]
 pytest
 ```
 
-## API overview
+Build and check the package locally before publishing:
 
-### Safe getters
-
-```python
-from fluent-control import try_get, try_gete, try_geta, try_get_attrs, apply_to_list
+```bash
+python -m build
+python -m twine check dist/*
 ```
 
-| Function | Purpose |
-|---|---|
-| `try_get(func, default=None)` | Return function result or fallback value. |
-| `try_gete(func, default=None)` | Return `(value, exception)` tuple. |
-| `try_geta(items, func)` | Safely map a function over a collection. |
-| `try_get_attrs(obj_func, attrs, defaults)` | Safely read several attributes. |
-| `apply_to_list(items, func, filter_func=None)` | Filter and map a collection with safe per-item execution. |
-
-### Result values
+## Core API
 
 ```python
-from fluent-control import Ok, Err, capture, result
+from fluentity import (
+    attempt,
+    policy,
+    try_catch,
+    chain,
+    choose,
+    get_path,
+    safe,
+    retryable,
+    timeoutable,
+    Ok,
+    Err,
+    Result,
+)
 ```
 
-`capture()` executes a callable and returns:
+`attempt(...)` builds one reliable operation.
 
-- `Ok(value)` on success;
-- `Err(exception)` on failure.
+`policy(...)` builds reusable reliability settings.
 
-Both result types support:
+`try_catch(...)` gives you a fluent explicit `try/except/else/finally` block.
 
-- `unwrap()`;
-- `unwrap_or(default)`;
-- `unwrap_or_else(func)`;
-- `map(func)`;
-- `bind(func)`.
+`chain()` builds a readable async-first pipeline with steps, delays, waits, and hooks.
 
-### AsyncChain
+`choose()` builds a compact conditional branch tree.
+
+`get_path(...)` safely reads nested dictionaries, lists, and objects.
+
+`Result` makes success and failure explicit.
+
+## Safe function execution
 
 ```python
-from fluent-control import AsyncChain
+from fluentity import attempt
+
+result = attempt(int, "123").run()
+
+assert result.unwrap() == 123
 ```
 
-Useful when a workflow has several steps and some of them are async while others are ordinary sync functions.
-
-Main methods:
-
-- `.then(func)` / `.add(func)`;
-- `.add_delay(seconds)`;
-- `.add_condition_wait(condition, timeout=None, interval=0.1)`;
-- `.on_complete(func)`;
-- `.on_error(func)`;
-- `.run(initial=None)`.
-
-### TaskManager
+If the function raises, the program does not crash:
 
 ```python
-from fluent-control import TaskManager, BaseTask
+result = attempt(int, "abc").run()
+
+assert result.is_err
+assert result.unwrap_or(0) == 0
 ```
 
-A tiny local task queue based on SQLite, Peewee, and cloudpickle.
+## Retry
 
-It is suitable for small local automation jobs, prototypes, bots, and scripts. It is not meant to replace distributed job systems such as Celery or Airflow.
+```python
+result = (
+    attempt(fetch_json, "https://example.com/api/user")
+    .retry(times=3, delay=1, backoff=2)
+    .run()
+)
+```
+
+Retries apply to the initial unsafe call. Later steps are only executed if the call succeeds.
+
+## Retry by result with `retry_if`
+
+Sometimes the function succeeds technically, but returns a temporary bad value such as `"pending"`, `None`, or an incomplete response.
+
+```python
+result = (
+    attempt(fetch_status)
+    .retry_if(lambda status: status == "pending", times=5, delay=1)
+    .run()
+)
+```
+
+If every attempt still matches the predicate, the result becomes `Err(RetryConditionError(...))`.
+
+## Validation with `ensure` and `ensure_not_none`
+
+```python
+result = (
+    attempt(load_user, user_id)
+    .ensure(lambda user: user.is_active, "User is inactive")
+    .ensure(lambda user: user.email, "User has no email")
+    .run()
+)
+```
+
+`ensure` is not collection filtering. It is a contract check for a successful value.
+
+For the common `None` case:
+
+```python
+result = (
+    attempt(find_user, user_id)
+    .ensure_not_none("User not found")
+    .then(send_message)
+    .run()
+)
+```
+
+## Step composition with `then`
+
+```python
+result = (
+    attempt(load_user, user_id)
+    .then(load_orders)
+    .then(build_report)
+    .run()
+)
+```
+
+If any step raises, the chain stops and returns `Err(exception)`.
+
+## Side effects with `tap`, `tap_error`, and `finally_`
+
+```python
+result = (
+    attempt(load_user, user_id)
+    .tap(lambda user: logger.info(f"Loaded user {user.id}"))
+    .then(load_orders)
+    .tap_error(lambda error: logger.warning(f"Operation failed: {error}"))
+    .finally_(lambda: logger.info("operation finished"))
+    .run()
+)
+```
+
+`tap` observes successful values without changing them.
+
+`tap_error` observes final errors.
+
+`finally_` always runs after success, error, or recovery.
+
+## Fallbacks with `recover` and `recover_value`
+
+```python
+config = (
+    attempt(load_config, "config.json")
+    .recover(lambda error: {"debug": False})
+    .run()
+    .unwrap()
+)
+```
+
+For a fixed fallback value, use `recover_value`:
+
+```python
+config = (
+    attempt(load_config, "config.json")
+    .recover_value({"debug": False})
+    .run()
+    .unwrap()
+)
+```
+
+You can limit fallback handling to selected exception types:
+
+```python
+number = (
+    attempt(int, user_input)
+    .recover_value(0, exceptions=(ValueError,))
+    .run()
+    .unwrap()
+)
+```
+
+## Async support
+
+Use `.arun()` when you prefer explicit async execution:
+
+```python
+result = await (
+    attempt(fetch_user, user_id)
+    .retry(times=3, delay=1)
+    .timeout(10)
+    .then(fetch_orders)
+    .arun()
+)
+```
+
+Or await the configured attempt directly:
+
+```python
+result = await (
+    attempt(fetch_user, user_id)
+    .retry(times=3, delay=1)
+    .timeout(10)
+    .then(fetch_orders)
+)
+```
+
+You can also pass timeout to execution instead of configuring it fluently:
+
+```python
+result = await attempt(fetch_user, user_id).then(fetch_orders).arun(timeout=10)
+```
+
+`timeout(...)` and `arun(timeout=...)` are designed for async execution. Synchronous `run(timeout=...)` is accepted for API symmetry, but returns an error because arbitrary synchronous Python code cannot be safely cancelled without threads or processes.
+
+## Reusable policies
+
+```python
+from fluentity import policy
+
+network = (
+    policy()
+    .retry(times=3, delay=1, backoff=2)
+    .timeout(10)
+    .tap_error(lambda error: logger.warning(f"Network failed: {error}"))
+    .recover_value(None)
+)
+
+user = await network.arun(fetch_user, user_id)
+orders = await network.arun(fetch_orders, user_id)
+```
+
+Policies are useful when many calls should share the same retry, timeout, logging, and fallback behavior.
+
+## Explicit `try/except/else/finally`
+
+`try_catch` keeps the useful idea of a fluent try block, but returns `Result` instead of hiding errors.
+
+```python
+from fluentity import try_catch
+
+result = (
+    try_catch(lambda: int(user_input))
+    .except_(lambda error: 0, ValueError)
+    .else_(lambda value: logger.info(f"parsed={value}"))
+    .finally_(lambda: logger.info("parse attempt finished"))
+    .run()
+)
+
+number = result.unwrap()
+```
+
+Use `attempt(...)` for retry/timeout/validation/recovery policies. Use `try_catch(...)` when you specifically want readable `try/except/else/finally` semantics.
+
+## Async pipelines with `chain()`
+
+`attempt(...)` is for reliable operations. `chain()` is for readable async-first pipelines where the workflow itself matters: steps, delays, waits, and completion/error hooks.
+
+```python
+from fluentity import chain
+
+result = await (
+    chain()
+    .then(lambda value: value + 1)
+    .delay(0.1)
+    .then(load_user)
+    .wait_until(lambda: cache_is_ready(), timeout=5)
+    .then(build_response)
+    .on_complete(lambda value: logger.info(f"done={value}"))
+    .on_error(lambda error: logger.warning(f"failed={error}"))
+    .run(41, timeout=10)
+)
+```
+
+## Compact conditional branches with `choose()`
+
+```python
+from fluentity import choose
+
+message = (
+    choose()
+    .when(lambda: status == "admin", lambda: "Full access")
+    .when(lambda: status == "premium", lambda: "Premium access")
+    .otherwise(lambda: "Basic access")
+    .run()
+    .unwrap()
+)
+```
+
+Async predicates and actions are supported through `await choose(...).arun()` or simply `await choose(...)`.
+
+## Safe nested access with `get_path`
+
+```python
+from fluentity import get_path
+
+username = get_path(payload, "user.profile.username", default="anonymous")
+first_title = get_path(payload, ["items", 0, "title"], default="untitled")
+```
+
+`get_path` works with dictionaries, lists/tuples, and ordinary object attributes.
+
+## Classic safe getters
+
+The older compact helpers are still available because they are useful in small scripts:
+
+```python
+from fluentity import try_get, try_gete, try_geta, try_get_attrs, apply_to_list
+
+username = try_get(lambda: payload["user"]["profile"]["username"], default="anonymous")
+value, error = try_gete(lambda: int(user_input), default=0)
+```
+
+## Decorators
+
+```python
+from fluentity import safe, retryable, timeoutable
+
+@safe
+def parse_int(text: str) -> int:
+    return int(text)
+
+@retryable(times=3, delay=1)
+def load_config() -> dict:
+    return read_config_from_disk()
+
+@timeoutable(10)
+async def fetch_json(url: str) -> dict:
+    return await client.get_json(url)
+```
+
+Decorated functions return `Result`.
+
+## Optional local task manager
+
+The task manager is intentionally optional because most users should not install database-related dependencies unless they need them.
+
+```bash
+pip install "fluentity[tasks]"
+```
+
+```python
+from fluentity import TaskManager
+
+manager = TaskManager.instance("demo")
+
+@manager.task
+def heavy_square(value: int) -> int:
+    return value * value
+```
+
+This is useful for local bots, prototypes, and automation scripts. It is not a replacement for Celery, RQ, Airflow, or distributed workers.
 
 ## Project structure
 
 ```text
-fluent_control/
+fluentity/
   __init__.py
-  async_chain.py
-  AsyncChain.py              # backward-compatible import path
-  ifer.py
+  attempt.py
+  chain.py
+  choose.py
+  path.py
+  policy.py
   result.py
   safe_getter.py
-  safe_getter_rust.py        # backward-compatible import path
   task_manager_db.py
-  tryer.py
+  try_catch.py
 examples/
-  basic_usage.py
-  async_chain_usage.py
+  async_reliability_usage.py
+  reliability_usage.py
   task_manager_usage.py
 tests/
   test_core.py
@@ -261,24 +456,22 @@ pyproject.toml
 README.md
 ```
 
-## Backward compatibility
+## Continuous integration
 
-The project keeps compatibility shims for older import paths:
+The repository includes a GitHub Actions workflow at `.github/workflows/tests.yml`. It runs the test suite on Python 3.10, 3.11, 3.12, and 3.13 for pushes and pull requests to `main` or `master`.
 
-```python
-from fluent_control.AsyncChain import AsyncChain
-from fluent_control.safe_getter_rust import Ok, Err, result
-```
+## Design principles
 
-New code should prefer:
-
-```python
-from fluent_control import AsyncChain, Ok, Err, capture
-```
+- Prefer practical reliability over fluent style for its own sake.
+- Keep the core dependency-free.
+- Make failures explicit with `Result`.
+- Keep collection processing out of scope.
+- Support async workflows without forcing verbose `.arun()` everywhere.
+- Keep heavier features, such as the SQLite task manager, optional.
 
 ## When not to use this library
 
-Use a larger framework if you need distributed workers, scheduled DAGs, retries with complex policies, observability dashboards, transactional queues, or horizontal scaling. `fluent-control` is intentionally small and local-first.
+Use a larger framework if you need distributed workers, scheduled DAGs, complex observability, transactional queues, horizontal scaling, or durable cross-machine orchestration. Fluentity is intentionally small and local-first.
 
 ## License
 

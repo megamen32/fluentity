@@ -3,32 +3,52 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "demiurgelib"
-version = "0.2.0"
-description = "Small Python helpers for safe calls, Result values, fluent control flow, async pipelines, and lightweight local tasks."
+name = "fluentity"
+version = "0.1.0"
+description = "Fluent reliability primitives for Python functions: safe attempts, retries, timeouts, fallbacks, and explicit Result values."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [{name = "demiurgelib contributors"}]
-keywords = ["python", "asyncio", "result", "safe-call", "task-queue", "workflow"]
+authors = [{name = "Fluentity contributors"}]
+keywords = [
+    "python",
+    "result",
+    "retry",
+    "timeout",
+    "reliability",
+    "resilience",
+    "control-flow",
+    "safe-call",
+    "async",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
 ]
-dependencies = [
-    "cloudpickle>=3.0.0",
-    "peewee>=3.17.0",
-]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/megamen32/fluentity"
+Repository = "https://github.com/megamen32/fluentity"
+Issues = "https://github.com/megamen32/fluentity/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0.0"]
+tasks = ["cloudpickle>=3.0.0", "peewee>=3.17.0"]
+dev = ["pytest>=8.0.0", "build>=1.2.0", "twine>=5.0.0"]
 
 [tool.setuptools.packages.find]
-include = ["demiurgelib*"]
+include = ["fluentity*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

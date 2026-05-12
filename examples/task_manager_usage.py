@@ -1,7 +1,7 @@
 import asyncio
 import time
 
-from demiurgelib import TaskManager
+from fluentity import TaskManager
 
 
 manager = TaskManager.instance("demo")

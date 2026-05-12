@@ -1,4 +1,4 @@
-from demiurgelib import AsyncChain, ConditionalExecutor, Ok, Err, capture, try_get
+from fluentity import AsyncChain, ConditionalExecutor, Ok, Err, capture, try_get
 
 
 value = try_get(lambda: {"user": {"name": "Ada"}}["user"]["name"], default="unknown")

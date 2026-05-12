@@ -1,6 +1,6 @@
 import asyncio
 
-from demiurgelib import AsyncChain
+from fluentity import AsyncChain
 
 
 async def fetch_number() -> int:
