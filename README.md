@@ -1,8 +1,8 @@
-# demiurgelib
+# fluent-control
 
 **Small Python helpers for code that should keep moving even when individual steps fail.**
 
-`demiurgelib` is a compact utility library for scripts, bots, parsers, automation jobs, and small backend services. It gives you a practical set of primitives for safe function calls, Rust-like `Result` values, fluent `try/except` and `if/else` blocks, async pipelines, and a simple SQLite-backed local task queue.
+`fluent-control` is a compact utility library for scripts, bots, parsers, automation jobs, and small backend services. It gives you a practical set of primitives for safe function calls, Rust-like `Result` values, fluent `try/except` and `if/else` blocks, async pipelines, and a simple SQLite-backed local task queue.
 
 The goal is not to replace large workflow frameworks. The goal is to remove repetitive boilerplate from everyday Python code where you need to run many small operations, handle partial failures, and keep the control flow readable.
 
@@ -16,7 +16,7 @@ Real automation code often has the same recurring problems:
 - small background jobs need persistence, but Celery/RQ/Airflow are too heavy;
 - scripts need to look clean enough to maintain later.
 
-`demiurgelib` focuses exactly on that middle layer: safer calls, clearer flow, and lightweight orchestration.
+`fluent-control` focuses exactly on that middle layer: safer calls, clearer flow, and lightweight orchestration.
 
 ## Features
 
@@ -32,7 +32,7 @@ Real automation code often has the same recurring problems:
 ### Safe fallback for fragile code
 
 ```python
-from demiurgelib import try_get
+from fluent_control import try_get
 
 username = try_get(
     lambda: payload["user"]["profile"]["username"],
@@ -43,7 +43,7 @@ username = try_get(
 ### Rust-like `Result`
 
 ```python
-from demiurgelib import Ok, Err, capture
+from fluent_control import Ok, Err, capture
 
 result = capture(lambda: 10 / 2)
 
@@ -57,7 +57,7 @@ match result:
 ### Transform only successful values
 
 ```python
-from demiurgelib import capture
+from fluent_control import capture
 
 result = (
     capture(lambda: "42")
@@ -72,7 +72,7 @@ print(result)  # 84
 ### Fluent `try/except/else/finally`
 
 ```python
-from demiurgelib import TryExecutor
+from fluent_control import TryExecutor
 
 value = (
     TryExecutor(lambda: int("123"))
@@ -86,7 +86,7 @@ value = (
 ### Fluent condition tree
 
 ```python
-from demiurgelib import ConditionalExecutor
+from fluent_control import ConditionalExecutor
 
 status = "premium"
 
@@ -105,7 +105,7 @@ message = (
 
 ```python
 import asyncio
-from demiurgelib import AsyncChain
+from fluent_control import AsyncChain
 
 async def fetch_number() -> int:
     await asyncio.sleep(0.1)
@@ -133,7 +133,7 @@ asyncio.run(main())
 ```python
 import asyncio
 import time
-from demiurgelib import TaskManager
+from fluent_control import TaskManager
 
 manager = TaskManager.instance("demo")
 
@@ -158,14 +158,14 @@ asyncio.run(main())
 From PyPI, once published:
 
 ```bash
-pip install demiurgelib
+pip install fluent-control
 ```
 
 From a local checkout:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/demiurgelib.git
-cd demiurgelib
+git clone https://github.com/YOUR_USERNAME/fluent-control.git
+cd fluent-control
 pip install -e .
 ```
 
@@ -181,7 +181,7 @@ pytest
 ### Safe getters
 
 ```python
-from demiurgelib import try_get, try_gete, try_geta, try_get_attrs, apply_to_list
+from fluent-control import try_get, try_gete, try_geta, try_get_attrs, apply_to_list
 ```
 
 | Function | Purpose |
@@ -195,7 +195,7 @@ from demiurgelib import try_get, try_gete, try_geta, try_get_attrs, apply_to_lis
 ### Result values
 
 ```python
-from demiurgelib import Ok, Err, capture, result
+from fluent-control import Ok, Err, capture, result
 ```
 
 `capture()` executes a callable and returns:
@@ -214,7 +214,7 @@ Both result types support:
 ### AsyncChain
 
 ```python
-from demiurgelib import AsyncChain
+from fluent-control import AsyncChain
 ```
 
 Useful when a workflow has several steps and some of them are async while others are ordinary sync functions.
@@ -231,7 +231,7 @@ Main methods:
 ### TaskManager
 
 ```python
-from demiurgelib import TaskManager, BaseTask
+from fluent-control import TaskManager, BaseTask
 ```
 
 A tiny local task queue based on SQLite, Peewee, and cloudpickle.
@@ -241,7 +241,7 @@ It is suitable for small local automation jobs, prototypes, bots, and scripts. I
 ## Project structure
 
 ```text
-demiurgelib/
+fluent_control/
   __init__.py
   async_chain.py
   AsyncChain.py              # backward-compatible import path
@@ -266,19 +266,19 @@ README.md
 The project keeps compatibility shims for older import paths:
 
 ```python
-from demiurgelib.AsyncChain import AsyncChain
-from demiurgelib.safe_getter_rust import Ok, Err, result
+from fluent_control.AsyncChain import AsyncChain
+from fluent_control.safe_getter_rust import Ok, Err, result
 ```
 
 New code should prefer:
 
 ```python
-from demiurgelib import AsyncChain, Ok, Err, capture
+from fluent_control import AsyncChain, Ok, Err, capture
 ```
 
 ## When not to use this library
 
-Use a larger framework if you need distributed workers, scheduled DAGs, retries with complex policies, observability dashboards, transactional queues, or horizontal scaling. `demiurgelib` is intentionally small and local-first.
+Use a larger framework if you need distributed workers, scheduled DAGs, retries with complex policies, observability dashboards, transactional queues, or horizontal scaling. `fluent-control` is intentionally small and local-first.
 
 ## License
 
