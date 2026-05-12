@@ -1,68 +1,51 @@
 # demiurgelib
 
-**A compact Python utility library for safer execution, fluent control flow, async pipelines, and lightweight persisted task queues.**
+**Small Python helpers for code that should keep moving even when individual steps fail.**
 
-`demiurgelib` is a small toolbox for projects where you repeatedly need the same pragmatic patterns:
+`demiurgelib` is a compact utility library for scripts, bots, parsers, automation jobs, and small backend services. It gives you a practical set of primitives for safe function calls, Rust-like `Result` values, fluent `try/except` and `if/else` blocks, async pipelines, and a simple SQLite-backed local task queue.
 
-- run fragile code without breaking the whole pipeline;
-- express conditional logic in a fluent, readable style;
-- build sequential async/sync chains;
-- wrap tasks, persist them in SQLite, and execute them later;
-- use a tiny Rust-like `Result` pattern when exceptions are not the best control-flow mechanism.
+The goal is not to replace large workflow frameworks. The goal is to remove repetitive boilerplate from everyday Python code where you need to run many small operations, handle partial failures, and keep the control flow readable.
 
-The library is intentionally lightweight. It does not try to become a framework. It gives you small building blocks that can be copied into scripts, bots, automation tools, parsers, and backend utilities.
+## Why it is useful
 
-## Why use it?
+Real automation code often has the same recurring problems:
 
-Python projects often accumulate the same small helpers again and again: `try/except` wrappers, fallback getters, delayed task execution, conditional callbacks, simple async chains, and database-backed background jobs. `demiurgelib` puts these patterns in one place with a minimal API.
+- one bad item breaks the whole batch;
+- `try/except` blocks hide the main logic;
+- sync and async functions need to be chained together;
+- small background jobs need persistence, but Celery/RQ/Airflow are too heavy;
+- scripts need to look clean enough to maintain later.
 
-Use it when you want practical utilities that keep code short without hiding too much behavior behind abstractions.
+`demiurgelib` focuses exactly on that middle layer: safer calls, clearer flow, and lightweight orchestration.
 
 ## Features
 
-- **Safe getters** — execute a callable and return a fallback instead of crashing.
-- **Batch-safe mapping** — apply a function to a list while skipping failed elements.
-- **Rust-like `Result` objects** — return `Ok(value)` or `Err(error)` explicitly.
-- **Fluent conditional execution** — chain `if_`, `then`, `elif_`, `else_`, `finally_` calls.
-- **Fluent try/except/finally wrapper** — describe error handling as a small execution object.
-- **AsyncChain** — compose sync and async steps into one sequential pipeline.
-- **SQLite task manager** — persist callable tasks with `peewee` and `cloudpickle`.
+- **Safe calls**: run callables with fallback values instead of crashing the whole process.
+- **`Result` API**: use `Ok(value)` / `Err(error)` with `unwrap`, `unwrap_or`, `map`, `bind`, and pattern matching.
+- **Fluent control flow**: express `try/except/else/finally` and `if/elif/else/finally` chains declaratively.
+- **Async pipelines**: chain sync and async steps in one readable `AsyncChain`.
+- **Persistent task queue**: store local tasks in SQLite and execute them later.
+- **Small surface area**: no complex service, broker, worker cluster, or configuration system.
 
-## Examples
+## Quick examples
 
-### Safe execution with fallback values
+### Safe fallback for fragile code
 
 ```python
-from safe_getter import try_get, try_gete
+from demiurgelib import try_get
 
-value = try_get(lambda: int("42"), default=0)
-print(value)  # 42
-
-value = try_get(lambda: int("not-a-number"), default=0)
-print(value)  # 0
-
-result, error = try_gete(lambda: 1 / 0, default=None)
-print(result)  # None
-print(error)   # division by zero
+username = try_get(
+    lambda: payload["user"]["profile"]["username"],
+    default="anonymous",
+)
 ```
 
-### Apply a risky function to a list
+### Rust-like `Result`
 
 ```python
-from safe_getter import try_geta
+from demiurgelib import Ok, Err, capture
 
-items = ["1", "2", "bad", "4"]
-converted = try_geta(items, int, skip_none=True)
-
-print(converted)  # [1, 2, 4]
-```
-
-### Rust-like `Result` objects
-
-```python
-from safe_getter_rust import Ok, Err, divide
-
-result = divide(10, 2)
+result = capture(lambda: 10 / 2)
 
 match result:
     case Ok(value):
@@ -71,181 +54,232 @@ match result:
         print(f"Failed: {error}")
 ```
 
-You can also unwrap successful values:
+### Transform only successful values
 
 ```python
-value = divide(10, 2).unwrap()
-```
-
-If the result is `Err`, `unwrap()` raises the stored exception.
-
-### Fluent conditional logic
-
-```python
-from ifer import ConditionalExecutor
-
-user_score = 87
-
-(
-    ConditionalExecutor()
-    .if_(lambda: user_score >= 90)
-    .then(lambda: print("excellent"))
-    .elif_(lambda: user_score >= 70)
-    .then(lambda: print("good"))
-    .else_(lambda: print("needs improvement"))
-    .finally_(lambda: print("checked"))
-    .execute()
-)
-```
-
-### Fluent try/except/finally logic
-
-```python
-from tryer import TryExecutor
+from demiurgelib import capture
 
 result = (
-    TryExecutor(lambda: int("bad"))
-    .except_(lambda error: print(f"Handled: {error}"))
-    .else_(lambda: print("No error"))
-    .finally_(lambda: print("Cleanup"))
+    capture(lambda: "42")
+    .map(int)
+    .map(lambda value: value * 2)
+    .unwrap_or(0)
+)
+
+print(result)  # 84
+```
+
+### Fluent `try/except/else/finally`
+
+```python
+from demiurgelib import TryExecutor
+
+value = (
+    TryExecutor(lambda: int("123"))
+    .except_(lambda error: print(f"Bad value: {error}"), ValueError)
+    .else_(lambda result: print(f"Parsed: {result}"))
+    .finally_(lambda: print("Done"))
     .execute()
 )
 ```
 
-### Sequential async/sync pipeline
+### Fluent condition tree
+
+```python
+from demiurgelib import ConditionalExecutor
+
+status = "premium"
+
+message = (
+    ConditionalExecutor()
+    .if_(lambda: status == "admin")
+    .then(lambda: "Full access")
+    .elif_(lambda: status == "premium")
+    .then(lambda: "Premium access")
+    .else_(lambda: "Basic access")
+    .execute()
+)
+```
+
+### Async pipeline with sync and async steps
 
 ```python
 import asyncio
-from AsyncChain import AsyncChain
+from demiurgelib import AsyncChain
 
-async def load_data():
-    return 10
+async def fetch_number() -> int:
+    await asyncio.sleep(0.1)
+    return 21
 
-def multiply(value):
+def double(value: int) -> int:
     return value * 2
 
-async def save_result(value):
-    print(f"Saved: {value}")
-    return value
-
-async def main():
+async def main() -> None:
     result = await (
         AsyncChain()
-        .add(load_data)
-        .add_delay(1)
-        .add(multiply)
-        .on_complete(save_result)
+        .then(fetch_number)
+        .then(double)
+        .add_delay(0.1)
+        .on_complete(lambda value: f"result={value}")
         .run()
     )
-
-    print(result)  # 20
+    print(result)
 
 asyncio.run(main())
 ```
 
-### Persisted task queue with SQLite
+### Local persistent task queue
 
 ```python
 import asyncio
 import time
+from demiurgelib import TaskManager
 
-from task_manager_db import TaskManager, BaseTask
-
-TaskManager.create_table(safe=True)
-BaseTask.create_table(safe=True)
-
-manager = TaskManager.instance(name="example")
+manager = TaskManager.instance("demo")
 
 @manager.task
-def heavy_job(x: int) -> int:
-    time.sleep(2)
-    return x * x
+def heavy_square(value: int) -> int:
+    time.sleep(1)
+    return value * value
 
-async def main():
-    heavy_job(5)
-    await manager.start_tasks()
+async def main() -> None:
+    heavy_square(3)
+    heavy_square(4)
+    await manager.start_tasks(once=True)
+
+    for task in manager.tasks:
+        print(task.status, task.result)
 
 asyncio.run(main())
 ```
 
-The task manager stores tasks in `tasks_db.sqlite` and executes pending tasks asynchronously.
-
 ## Installation
 
-### From source
+From PyPI, once published:
 
 ```bash
-git clone https://github.com/<your-username>/demiurgelib.git
+pip install demiurgelib
+```
+
+From a local checkout:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/demiurgelib.git
 cd demiurgelib
-python -m pip install -e .
+pip install -e .
 ```
 
-### Required dependencies
-
-The core helpers use only the Python standard library. The SQLite task manager additionally requires:
+For development:
 
 ```bash
-python -m pip install peewee cloudpickle
-```
-
-When installed through `pyproject.toml`, these dependencies are installed automatically.
-
-## Project structure
-
-```text
-.
-├── AsyncChain.py              # Sequential sync/async pipeline builder
-├── ifer.py                    # Fluent conditional executor
-├── safe_getter.py             # Safe fallback helpers
-├── safe_getter_rust.py        # Rust-like Result / Ok / Err helpers
-├── task_manager_db.py         # SQLite-backed task manager
-├── task_manager_example.py    # Example task manager usage
-├── tryer.py                   # Fluent try/except/finally executor
-├── example.ipynb              # Notebook example
-├── pyproject.toml             # Packaging metadata
-└── README.md
+pip install -e .[dev]
+pytest
 ```
 
 ## API overview
 
-### `safe_getter`
+### Safe getters
+
+```python
+from demiurgelib import try_get, try_gete, try_geta, try_get_attrs, apply_to_list
+```
 
 | Function | Purpose |
-| --- | --- |
-| `try_gete(func, default=None, log_exc=False)` | Return `(result, exception)` after executing a callable. |
-| `try_get(func, default=None, return_exception=False, **kwargs)` | Return result, default value, or exception. |
-| `try_geta(arr, func, skip_none=True, default_element=None)` | Apply a callable to each item safely. |
-| `try_get_attrs(obj_func, attrs, defaults)` | Safely read several attributes from an object. |
-| `apply_to_list(lst, func, filter_func=None, return_all=True)` | Apply a callable to filtered list items. |
+|---|---|
+| `try_get(func, default=None)` | Return function result or fallback value. |
+| `try_gete(func, default=None)` | Return `(value, exception)` tuple. |
+| `try_geta(items, func)` | Safely map a function over a collection. |
+| `try_get_attrs(obj_func, attrs, defaults)` | Safely read several attributes. |
+| `apply_to_list(items, func, filter_func=None)` | Filter and map a collection with safe per-item execution. |
 
-### `safe_getter_rust`
+### Result values
 
-| Object | Purpose |
-| --- | --- |
-| `Ok(value)` | Successful result wrapper. |
-| `Err(error)` | Failed result wrapper. |
-| `Result` | Type alias for `Ok[T] | Err[E]`. |
-| `result(func)` | Execute a callable and wrap the result in `Ok` or `Err`. |
-| `divide(x, y)` | Small example function returning `Result`. |
+```python
+from demiurgelib import Ok, Err, capture, result
+```
 
-### `AsyncChain`
+`capture()` executes a callable and returns:
 
-| Method | Purpose |
-| --- | --- |
-| `add(func)` | Add a sync or async step. |
-| `add_delay(seconds)` | Add an async delay step. |
-| `add_condition_wait(condition_func, timeout=None)` | Wait until a condition becomes true. |
-| `on_complete(func)` | Add a final handler. |
-| `on_error(func)` | Add an error handler. |
-| `run()` | Execute the chain and return the final result. |
+- `Ok(value)` on success;
+- `Err(exception)` on failure.
 
-## Requirements
+Both result types support:
 
-- Python 3.10+
-- `peewee` and `cloudpickle` for the task manager
+- `unwrap()`;
+- `unwrap_or(default)`;
+- `unwrap_or_else(func)`;
+- `map(func)`;
+- `bind(func)`.
 
-## Notes
+### AsyncChain
 
-`demiurgelib` is best treated as a small utility package rather than a strict application framework. The modules are independent, so you can use only the parts you need.
+```python
+from demiurgelib import AsyncChain
+```
 
-For production systems, review task serialization carefully: `cloudpickle` is powerful, but persisted executable callables should be treated as trusted code only.
+Useful when a workflow has several steps and some of them are async while others are ordinary sync functions.
+
+Main methods:
+
+- `.then(func)` / `.add(func)`;
+- `.add_delay(seconds)`;
+- `.add_condition_wait(condition, timeout=None, interval=0.1)`;
+- `.on_complete(func)`;
+- `.on_error(func)`;
+- `.run(initial=None)`.
+
+### TaskManager
+
+```python
+from demiurgelib import TaskManager, BaseTask
+```
+
+A tiny local task queue based on SQLite, Peewee, and cloudpickle.
+
+It is suitable for small local automation jobs, prototypes, bots, and scripts. It is not meant to replace distributed job systems such as Celery or Airflow.
+
+## Project structure
+
+```text
+demiurgelib/
+  __init__.py
+  async_chain.py
+  AsyncChain.py              # backward-compatible import path
+  ifer.py
+  result.py
+  safe_getter.py
+  safe_getter_rust.py        # backward-compatible import path
+  task_manager_db.py
+  tryer.py
+examples/
+  basic_usage.py
+  async_chain_usage.py
+  task_manager_usage.py
+tests/
+  test_core.py
+pyproject.toml
+README.md
+```
+
+## Backward compatibility
+
+The project keeps compatibility shims for older import paths:
+
+```python
+from demiurgelib.AsyncChain import AsyncChain
+from demiurgelib.safe_getter_rust import Ok, Err, result
+```
+
+New code should prefer:
+
+```python
+from demiurgelib import AsyncChain, Ok, Err, capture
+```
+
+## When not to use this library
+
+Use a larger framework if you need distributed workers, scheduled DAGs, retries with complex policies, observability dashboards, transactional queues, or horizontal scaling. `demiurgelib` is intentionally small and local-first.
+
+## License
+
+MIT
