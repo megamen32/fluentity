@@ -1,54 +1,36 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "fluentity"
 version = "0.1.0"
-description = "Fluent reliability primitives for Python functions: safe attempts, retries, timeouts, fallbacks, and explicit Result values."
+description = "Fluent reliability primitives for Python functions."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
-authors = [{name = "Fluentity contributors"}]
+license = { text = "MIT" }
+
+authors = [
+  { name = "megamen32" }
+]
+
 keywords = [
-    "python",
-    "result",
-    "retry",
-    "timeout",
-    "reliability",
-    "resilience",
-    "control-flow",
-    "safe-call",
-    "async",
+  "result",
+  "retry",
+  "timeout",
+  "async",
+  "reliability",
+  "fluent",
+  "safe-execution"
 ]
+
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Utilities",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Topic :: Utilities",
+  "Typing :: Typed"
 ]
-dependencies = []
-
-[project.urls]
-Homepage = "https://github.com/megamen32/fluentity"
-Repository = "https://github.com/megamen32/fluentity"
-Issues = "https://github.com/megamen32/fluentity/issues"
-
-[project.optional-dependencies]
-tasks = ["cloudpickle>=3.0.0", "peewee>=3.17.0"]
-dev = ["pytest>=8.0.0", "build>=1.2.0", "twine>=5.0.0"]
-
-[tool.setuptools.packages.find]
-include = ["fluentity*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q"
