@@ -7,30 +7,24 @@
 
 **Fluent reliability primitives for Python functions.**
 
-Fluentity helps Python code keep moving: safe attempts, retries, timeouts, fallbacks, explicit `Result` values, and async control chains.
-
-It turns fragile code with `try/except` blocks, retry loops, result checks, fallbacks, logging hooks, and async timeouts into readable execution chains.
-
-It is **not** another fluent collection wrapper. Libraries such as `flupy` and `pyfluent-iterables` are great when your main problem is transforming iterables with `.map()`, `.filter()`, `.chunk()`, `.to_list()`, and similar operations.
-
-Fluentity solves a different problem: **running unsafe operations safely**.
+Fluentity is a small dependency-free Python library for safe execution chains:
+retries, timeouts, fallbacks, validation, explicit `Result` values, and async workflows.
 
 ```python
 from fluentity import attempt
 
-orders = (
-    attempt(load_user, user_id)
+result = await (
+    attempt(fetch_user, user_id)
     .retry(times=3, delay=1)
     .timeout(10)
-    .ensure(lambda user: user.is_active, "User is inactive")
-    .then(load_orders)
-    .tap(lambda orders: logger.info(f"Loaded {len(orders)} orders"))
-    .tap_error(lambda error: logger.exception(f"Failed to load orders: {error}"))
+    .ensure(lambda user: user.is_active, "Inactive user")
+    .then(fetch_orders)
     .recover_value([])
-    .run()
-    .unwrap()
 )
+
+orders = result.unwrap()
 ```
+It is not another fluent collection wrapper. Libraries such as [flupy](https://github.com/olirice/flupy) and [pyfluent-iterables](https://github.com/feynmanix/pyfluent-iterables) are great when your main problem is transforming iterables with .map(), .filter(), .chunk(), .to_list(), and similar operations.
 
 For async code, you can skip the explicit `.arun()` and await the configured attempt directly:
 
