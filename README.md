@@ -470,3 +470,8 @@ Use a larger framework if you need distributed workers, scheduled DAGs, complex 
 ## License
 
 MIT
+
+## Screenshot
+
+![Fluentity PyPI page screenshot](docs/screenshots/pypi.png)
+
