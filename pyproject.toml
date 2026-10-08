@@ -34,3 +34,7 @@ classifiers = [
   "Topic :: Utilities",
   "Typing :: Typed"
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=7,<9"]
+tasks = ["cloudpickle>=2", "peewee>=3,<4"]
